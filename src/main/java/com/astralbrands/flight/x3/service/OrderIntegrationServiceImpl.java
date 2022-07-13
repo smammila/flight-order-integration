@@ -4,7 +4,6 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import com.astralbrands.flight.x3.model.OrderDetails;
 
@@ -17,13 +16,20 @@ public class OrderIntegrationServiceImpl implements OrderIntegrationService{
 	@Autowired
 	private IFileService iFileService;
 	
+	@Autowired
+	private AwsLambdaService awsLambdaService;
+	
 	@Override
-	public void integrateOrders(MultipartFile file) {
-		
+	public String integrateOrders() {
+		String fileData = null;
+		//Stores Order Details for each OrderID
 		Map<String,OrderDetails> orderDetails = flightServices.getOrderDetails();
 		if(orderDetails != null) {
-			iFileService.generateIFile(orderDetails);
+			System.out.println("Final order details are: "+orderDetails.toString());
+			fileData = iFileService.generateIFile(orderDetails);
+			//awsLambdaService.integrateToX3(fileData);
 		}
+		return fileData;
 	}
 
 }

@@ -25,6 +25,14 @@ public class ApiUtil {
 		request = request.replace("#searchValueEndDate", currentDate);
 		return request;
 	}
+	
+	public static String getWareHouseIdSearchReq() {
+		String request = FileUtils.getWareHouseIdSearchReq();
+		String currentDate = getCurrentDate();
+		request = request.replace("#searchValueStartDate", currentDate);
+		request = request.replace("#searchValueEndDate", currentDate);
+		return request;
+	}
 
 	public static String getDataExportFilterRequest(Integer runId) {
 		String request = GET_DATA_EXPORT_WITH_FILTER_REQUEST.replace("#runId", runId + "");

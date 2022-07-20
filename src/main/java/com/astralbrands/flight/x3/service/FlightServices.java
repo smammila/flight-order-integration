@@ -8,7 +8,6 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,7 +42,7 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 
 	private static final Map<String, String> SOLD_TO_MAP = new HashMap<>(5);
 	private SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd");
-
+	private DecimalFormat df = new DecimalFormat("0.00");
 	static {
 		SOLD_TO_MAP.put("US Direct to Corporate", "49999988");
 		SOLD_TO_MAP.put("US Corp Home Office Warehouse", "49999999");
@@ -84,8 +83,9 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 		StringBuilder sb = new StringBuilder(); // search
 		try {
 			String accessToken = restApiCallService.getAccessToken();
-			//getExportData(35205, "US Direct to Corporate", accessToken, exportOrders);
-			Map<Integer, String> runIds = search(accessToken); // To store all the
+			System.out.println("token >> " + accessToken);
+			// getExportData(35628, "US Direct to Corporate", accessToken, exportOrders);
+			Map<Integer, String> runIds = searchWareHouseId(accessToken); // To store all the
 			// available runIds and Warehouse names
 
 			for (Map.Entry<Integer, String> entry : runIds.entrySet()) {
@@ -102,11 +102,11 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 			displayIds = null;
 			// send mail
 		}
-		System.out.println(" export order Map :"+exportOrders);
+		System.out.println(" export order Map :" + exportOrders);
 		for (Map.Entry<Integer, String> entry : exportOrders.entrySet()) {
 			sb.append(entry.getValue()).append(NEW_LINE);
 		}
-		System.out.println("i file data :"+sb.toString());
+		System.out.println("i file data :" + sb.toString());
 		iFileService.exportFile(sb.toString());
 		return runIdOrders;
 
@@ -132,18 +132,30 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 		System.out.println("Map is : " + orderNumberMap);
 		for (Map.Entry<String, List<OrderExportResponse>> entry : orderNumberMap.entrySet()) {
 			StringBuilder lines = new StringBuilder();
+
+			// String totalValue = getTotalValues(entry.getValue());
+
 			// double taxPrice = getOrderLines(entry.getValue(), lines);
 			System.out.println("Executing for order number : " + entry.getKey());
+			// System.out.println("Total shipping value is : "+shippingPrice+"total discount
+			// : "+discount+"total tax value : "+taxValue);
 			Map<String, String> taxOrders = getOrderLines(entry.getValue());
-			//System.out.println("Order lines are : " + taxOrders.get("orderLine"));
+			// System.out.println("Order lines are : " + taxOrders.get("orderLine"));
 			String header = getHeader(entry.getValue().get(0), wareHouseName);
-			header = header + IFILE_DATA_SEPERATOR + taxOrders.get("tax");
-			iFileData.append(header).append(IFILE_DATA_SEPERATOR).append(getDeliveryMode(wareHouseName)).append(IFILE_DATA_SEPERATOR)
-					.append(getCarrier(wareHouseName)).append(IFILE_DATA_SEPERATOR).append(getPaymentTerms(entry.getKey(), tokenId)).append(NEW_LINE).append(taxOrders.get("orderLine"));
+			// header = header + IFILE_DATA_SEPERATOR + taxOrders.get("tax");
+			iFileData.append(header).append(IFILE_DATA_SEPERATOR).append(taxOrders.get("shipingPrice"))
+					.append(IFILE_DATA_SEPERATOR).append(taxOrders.get("discountPrice")).append(IFILE_DATA_SEPERATOR)
+					.append(taxOrders.get("taxPrice")).append(IFILE_DATA_SEPERATOR)
+					.append(getDeliveryMode(wareHouseName)).append(IFILE_DATA_SEPERATOR)
+					.append(getCarrier(wareHouseName)).append(IFILE_DATA_SEPERATOR)
+					.append(getPaymentTerms(entry.getKey(), tokenId)).append(NEW_LINE)
+					.append(taxOrders.get("orderLine"));
 		}
-		System.out.println("Import data is : " + iFileData.toString());
+		iFileData.append(NEW_LINE);
+		// System.out.println("Import data is : " + iFileData.toString());
 		orders.put(runId, iFileData.toString());
 	}
+
 
 	private String getPaymentTerms(String orderDisplayId, String tokenId) {
 		String urlTemplate = UriComponentsBuilder.fromHttpUrl(orderDetailsUrl)
@@ -154,19 +166,18 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 				params);
 		params = null;
 		String paymentTerms = "";
-		
+
 		try {
-			if(orderDetails.getTransactions().get(0).getPaymentTypeIdentifier() != null)
+			if (orderDetails.getTransactions().get(0).getPaymentTypeIdentifier() != null)
 				paymentTerms = orderDetails.getTransactions().get(0).getPaymentTypeIdentifier().toString();
-		}catch (Exception e) {
+		} catch (Exception e) {
 			return "WEB";
 		}
-		if(paymentTerms.equalsIgnoreCase("CC"))
+		if (paymentTerms.equalsIgnoreCase("CC"))
 			return "WEB";
-		else if(paymentTerms.equalsIgnoreCase("paypal")) {
+		else if (paymentTerms.equalsIgnoreCase("paypal")) {
 			return "PAYPAL";
-		}
-		else
+		} else
 			return paymentTerms;
 	}
 
@@ -192,32 +203,108 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 
 		StringBuilder sb = new StringBuilder();
 		Map<String, String> taxOrders = new HashMap<>();
-		// Map<String, Integer> kits = new HashMap<>();
-		// int count =0;
-		Map<String, Double> kits = getKitsCount(orderExportResponse);
-		System.out.println("Number kits and their price :"+kits);
+//		 Map<String, Integer> kits = new HashMap<>();
+//		 int count =0;
+
+		// Map<String, Double> kits = getKitsCount(orderExportResponse);
+		// System.out.println("Number kits and their price :" + kits);
+		//updateGrossPrice(orderExportResponse);
+
+		double shippingPrice = 0.0;
+		double discount = 0.0;
+		double tax = 0.0;
 
 		for (OrderExportResponse order : orderExportResponse) {
-
-			sb.append(getLines(order, kits));
+			shippingPrice = shippingPrice + order.getShipping();
+			discount = discount + order.getDiscount();
+			if(tax == 0.0) {
+				tax = tax + order.getTax();
+			}
+			// sb.append(getLines(order, kits));
+			sb.append(getLines(order));
 			sb.append(NEW_LINE);
-			System.out.println("Order lines for order number are : " + sb.toString());
+			// System.out.println("Order lines for order number are : " + sb.toString());
 		}
-		System.out.println("Order lines for order number are : " + sb.toString());
-		taxOrders.put("tax", String.valueOf(taxPrice));
+		taxOrders.put("shipingPrice", String.valueOf(df.format(shippingPrice)));
+		taxOrders.put("discountPrice", String.valueOf(df.format(discount)));
+		taxOrders.put("taxPrice", String.valueOf(df.format(tax)));
+
+		/*
+		 * double tempPrice = 0; String parentSku = null; int index =0 ; for (int i = 0;
+		 * i < orderExportResponse.size(); i++) { OrderExportResponse order =
+		 * orderExportResponse.get(i); if (order.getKitBuildableParentSKU() == null) {
+		 * tempPrice = order.getGrossPrice(); parentSku = order.getProduct(); index = i;
+		 * } else { int count = 0; for (int j = i; j < orderExportResponse.size(); j++)
+		 * { OrderExportResponse tmpOrd = orderExportResponse.get(j);
+		 * System.out.println("sku ID :"+tmpOrd.getProduct()+" parent : " +
+		 * tmpOrd.getKitBuildableParentSKU() + " count :" + count + "index  : " +
+		 * tmpOrd.getKitBuildableIndex() + " tempParent :" + parentSku); if
+		 * (Integer.valueOf(tmpOrd.getKitBuildableIndex()) > 0 &&
+		 * tmpOrd.getKitBuildableParentSKU().equals(parentSku) ) { count = count + 1; }
+		 * else { break; } } double divPrice = 0; if (count > 0) { divPrice = tempPrice
+		 * / count; orderExportResponse.get(index).setGrossPrice(0.0); }
+		 * System.out.println(" parent sku : " + parentSku + " updated count :" + count
+		 * + "divPrice : " + divPrice + " total Price :" + tempPrice); for (int j = i; j
+		 * < orderExportResponse.size(); j++) { OrderExportResponse tmpOrd =
+		 * orderExportResponse.get(j); if
+		 * (Integer.valueOf(tmpOrd.getKitBuildableIndex()) > 0
+		 * &&tmpOrd.getKitBuildableParentSKU().equals(parentSku) &&
+		 * tmpOrd.getGrossPrice() != 0.0) { tmpOrd.setGrossPrice(divPrice); }
+		 * 
+		 * } }
+		 * 
+		 * }
+		 * 
+		 * for (OrderExportResponse order : orderExportResponse) {
+		 * 
+		 * sb.append(getLines(order)); sb.append(NEW_LINE);
+		 * System.out.println("Order lines for order number are : " + sb.toString()); }
+		 */
+		// System.out.println("Order lines for order number are : " + sb.toString());
+		//taxOrders.put("tax", String.valueOf(taxPrice));
 		taxOrders.put("orderLine", sb.toString());
 		return taxOrders;
+	}
+	
+	private void updateGrossPrice(List<OrderExportResponse> orderExportResponse) {
+		int len = orderExportResponse.size();
+		for (int i = 0; i < len; i++) {
+			double price = 0.0;
+			if (orderExportResponse.get(i).getKitBuildableParentSKU() == null) {
+				price = orderExportResponse.get(i).getGrossPrice();
+				i++;
+			}
+			int count = 0;
+			while (i < len && Integer.valueOf(orderExportResponse.get(i).getKitBuildableIndex()) > 0) {
+				if (orderExportResponse.get(i).grossPrice == 0.0) {
+					count++;
+				}
+				i++;
+			}
+			double divPrice;
+			if (count > 0) {
+				divPrice = price / count;
+				for (int j = i - count; j <= i; j++) {
+					if (j < len && orderExportResponse.get(j).grossPrice == 0.0) {
+						orderExportResponse.get(j).setGrossPrice(divPrice);
+					}
+				}
+			}
+
+		}
 	}
 
 	private Map<String, Double> getKitsCount(List<OrderExportResponse> orderExportResponse) {
 
 		Map<String, Integer> kits = new HashMap<>();
 		Map<String, Double> childPriceMap = new HashMap<>();
+		String skuKey;
 		for (OrderExportResponse res : orderExportResponse) {
 			if (res.getKitBuildableParentSKU() == null) {
 				continue;
 			}
-			Integer count = kits.get(res.getKitBuildableParentSKU());
+			skuKey = res.getKitBuildableParentSKU() + res.getProduct() + res.getKitBuildableIndex();
+			Integer count = kits.get(skuKey);
 			if (res.getGrossPrice() != 0.0) {
 				continue;
 			}
@@ -227,7 +314,7 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 				kits.put(res.getKitBuildableParentSKU(), count + 1);
 			}
 		}
-		System.out.println("Number kits and their price :"+kits);
+		System.out.println("Number kits and their price :" + kits);
 		for (OrderExportResponse res : orderExportResponse) {
 			Integer count = kits.get(res.getProduct());
 			if (count != null && count > 0) {
@@ -240,26 +327,29 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 		return childPriceMap;
 	}
 
-	private String getLines(OrderExportResponse order, Map<String, Double> kits) {
+	private String getLines(OrderExportResponse order) {
 		StringJoiner sj = new StringJoiner(IFILE_DATA_SEPERATOR);
 
 		String skuId = order.getProduct();
-		
+
 		sj.add("L");
 		sj.add(updateSku(skuId));
 		if (order.getKitBuildableParentSKU() != null) {
 			sj.add(order.getKitBuildableParentSKU() + SPACE + order.getProductName());
-		}
-		else if (skuId != null && checkSKU(skuId)) {
+		} else if (skuId != null && checkSKU(skuId)) {
 			sj.add(skuId + SPACE + order.getProductName());
-		}
-		else {
+		} else {
 			sj.add(order.getProductName());
 		}
-		
+
 		sj.add("EA");
 		sj.add(String.valueOf(order.getQuantity()));
 		sj.add(String.valueOf(order.getGrossPrice()));
+		sj.add(EMPTRY_STR);
+		sj.add(EMPTRY_STR);
+		sj.add(EMPTRY_STR);
+		sj.add(EMPTRY_STR);
+		sj.add(EMPTRY_STR);
 //		Double price = kits.get(order.getKitBuildableParentSKU());
 //		if (price != null && price > 0) {
 //			if (order.getGrossPrice() == 0.0) {
@@ -293,8 +383,8 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 		sj.add(EMPTRY_STR);
 		sj.add(getAddress(orderExportResponse)); // Billing address
 		sj.add(getAddress(orderExportResponse)); // order Address
-		sj.add(String.valueOf(orderExportResponse.getShipping()));
-		sj.add(String.valueOf(orderExportResponse.getDiscount()));
+		// sj.add(String.valueOf(orderExportResponse.getShipping()));
+		// sj.add(String.valueOf(orderExportResponse.getDiscount()));
 		return sj.toString();
 
 	}
@@ -365,6 +455,22 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 		String searchCriteriaRequest = ApiUtil.getSearchCriteriaRequest(searchValues);
 		SearchCriteriaResponse criteriaResult = call(searchCriteriaUrl, HttpMethod.POST, searchCriteriaRequest,
 				SearchCriteriaResponse.class, getHeader(accessToken));
+
+		if (criteriaResult != null && criteriaResult.getResults() != null) {
+			for (SearchCriteriaResult res : criteriaResult.getResults()) {
+				if (res.getOrderCount() > 0) {
+					runIds.put(res.getShippingFileRunID(), res.getWarehouses());
+				}
+			}
+		}
+		System.out.println(" run Ids :" + runIds);
+		return runIds;
+	}
+
+	public Map<Integer, String> searchWareHouseId(String accessToken) {
+		Map<Integer, String> runIds = new HashMap<>();
+		SearchCriteriaResponse criteriaResult = call(searchCriteriaUrl, HttpMethod.POST,
+				ApiUtil.getWareHouseIdSearchReq(), SearchCriteriaResponse.class, getHeader(accessToken));
 
 		if (criteriaResult != null && criteriaResult.getResults() != null) {
 			for (SearchCriteriaResult res : criteriaResult.getResults()) {
@@ -510,15 +616,13 @@ public class FlightServices extends RestApiCallService implements AppConstants {
 	private boolean checkSKU(String skuId) {
 		return (!skuId.startsWith(EIGHT) || skuId.matches("^[a-zA-Z0-9]*$"));
 	}
-	
+
 	private String updateSku(String skuId) {
-		if(!skuId.startsWith(EIGHT) && !skuId.startsWith(NINE)) {
+		if (!skuId.startsWith(EIGHT) && !skuId.startsWith(NINE)) {
 			return "09739";
-		}
-		else if(skuId.startsWith(EIGHT) || skuId.startsWith(NINE)) {
+		} else if (skuId.startsWith(EIGHT) || skuId.startsWith(NINE)) {
 			return skuId.replaceAll("[a-zA-Z]", "").toString();
-		}
-		else {
+		} else {
 			return skuId;
 		}
 	}

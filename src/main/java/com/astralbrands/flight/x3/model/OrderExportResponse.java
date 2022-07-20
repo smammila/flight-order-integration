@@ -51,6 +51,8 @@ public class OrderExportResponse{
  public String productName;
  @JsonProperty("KitBuildableParentSKU") 
  public String kitBuildableParentSKU;
+ @JsonProperty("KitBuildableIndex") 
+ public String kitBuildableIndex;
  @JsonProperty("Quantity") 
  public int quantity;
  @JsonProperty("GrossPrice") 
